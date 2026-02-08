@@ -2,7 +2,7 @@
 
 This repository contains the source code for the Master's Thesis: **"A Model-Agnostic Framework for Natural Language Explanations of Predictive Models"**.
 
-The framework introduces a robust, Object-Oriented architecture that integrates **Feature Importance Methods** (SHAP, LIME) and **Symbolic Logic Approaches** (Araucana-XAI) with **Large Language Models** (Llama-3 via Unsloth). The system generates coherent, truthful, and role-adapted clinical reports, specifically designed to mitigate LLM hallucinations through structural logic injection.
+The framework introduces a robust, Object-Oriented architecture that integrates **Feature Importance Methods** (SHAP, LIME) and **Logic-based Approaches** (Araucana-XAI) with **Large Language Models** (Llama-3 via Unsloth). The system generates coherent, truthful, and role-adapted clinical reports, specifically designed to mitigate LLM hallucinations through structural logic injection.
 
 ## 📂 Repository Contents
 
