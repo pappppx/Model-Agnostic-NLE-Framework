@@ -1,0 +1,14 @@
+# Python 3.12.13 (Google Colab Environment)
+
+# Main dependencies of the TFM
+torch==2.10.0+cu128
+unsloth==2026.4.6
+shap==0.51.0
+lime==0.2.0.1
+araucanaxai==0.9.4
+
+# Data management and utilities
+numpy==2.0.2
+pandas==2.2.2
+matplotlib==3.10.0
+scikit-learn==1.6.1
