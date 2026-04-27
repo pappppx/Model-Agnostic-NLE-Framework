@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nle_core"
+version = "0.1.0"
+authors = [
+  { name="Pablo Fuentes Chemes", email="p.fuentes@udc.es" },
+]
+description = "A Model-Agnostic Framework for Natural Language Explanations of Predictive Models"
+readme = "README.md"
+requires-python = ">=3.12"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "torch==2.10.0", 
+    "unsloth==2026.4.6",
+    "shap==0.51.0",
+    "lime==0.2.0.1",
+    "araucanaxai==0.9.4",
+    "numpy==2.0.2",
+    "pandas==2.2.2",
+    "matplotlib==3.10.0",
+    "scikit-learn==1.6.1",
+    "pyarrow"
+]
