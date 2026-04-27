@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nle_core"
+name = "nle-framework-pappppx"
 version = "0.1.0"
 authors = [
   { name="Pablo Fuentes Chemes", email="p.fuentes@udc.es" },
