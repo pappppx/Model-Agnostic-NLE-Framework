@@ -1,72 +1,110 @@
 # A Model-Agnostic Framework for Natural Language Explanations of Predictive Models
 
-This repository contains the source code for the Master's Thesis: **"A Model-Agnostic Framework for Natural Language Explanations of Predictive Models"**.
+This repository contains the source code and experimental framework for the Master's Thesis: **"A Model-Agnostic Framework for Natural Language Explanations of Predictive Models"**.
 
-The framework introduces a robust, Object-Oriented architecture that integrates **Feature Importance Methods** (SHAP, LIME) and **Logic-based Approaches** (Araucana-XAI) with **Large Language Models** (Llama-3 via Unsloth). The system generates coherent, truthful, and role-adapted clinical reports, specifically designed to mitigate LLM hallucinations through structural logic injection.
+The framework introduces a robust, Object-Oriented architecture designed to translate the outputs of black-box predictive models into human-readable **Natural Language Explanations (NLEs)**. It integrates **Feature Importance Methods** (SHAP, LIME) and **Logic-based Approaches** (Araucana-XAI) with **Large Language Models** (Llama-3 via Unsloth). The system aims to mitigate LLM hallucinations by injecting structural logic, generating coherent, truthful, and role-adapted reports.
 
-## 📂 Repository Contents
+---
 
-* `A_Model_Agnostic_Framework_for_NLE_of_Predictive_Models.ipynb`: The complete, self-contained Jupyter Notebook implementing the OOP framework and experimental pipeline.
+## 📌 Project Overview & Hypothesis
+The core objective is to evaluate whether injecting **Logic-based (Araucana-XAI)** alongside traditional **Feature Importance (SHAP, LIME)** improves the causal reasoning of LLMs. 
 
-## 🚀 Quick Start (Google Colab)
+By comparing a *Baseline* (Feature Weights only) against an *Enhanced Hybrid* (Weights + Decision Tree Logic), this framework demonstrates that providing explicit structural boundaries allows the LLM to generate more accurate, actionable, and causally grounded text.
 
-The easiest way to replicate the experiments is utilizing Google Colab's free GPU tier.
+To maintain a clean experimental environment, the core logic has been abstracted into a dedicated Python package: `nle-framework-pappppx`, available on PyPI.
 
-1.  Download the `.ipynb` file from this repository.
-2.  Upload it to [Google Colab](https://colab.research.google.com/).
-3.  **Runtime Setup:**
-    * Go to `Runtime` > `Change runtime type`.
-    * Select **T4 GPU** as the hardware accelerator.
-4.  **Execution:**
-    * Run the installation cells to set up the environment.
-    * The framework automatically handles the download and caching of the Llama-3 model.
+---
 
-## 🛠️ System Architecture & Requirements
+## 🛠️ System Architecture
 
-The project is built on Python 3.10 and utilizes a **Singleton Pattern** to manage GPU memory efficiently.
+The project adheres to the **Separation of Concerns** principle to manage GPU memory efficiently and maintain modularity:
 
-* **Core Class:** `NLEFramework` (Orchestrates XAI extraction and Prompt Generation).
-* **Hardware:** NVIDIA Tesla T4 (Required for 4-bit quantization).
-* **Key Libraries:**
-    * `unsloth` (Efficient LLM Inference)
-    * `araucanaxai` (Symbolic Decision Tree Surrogates)
-    * `shap` & `lime` (Feature Attribution)
-    * `scikit-learn` (Black-box modeling)
+* **`NLEModel`:** Utilizes a Singleton pattern to load and cache the Llama-3 model in the GPU. This prevents Out-of-Memory errors and redundant loading times.
+* **`NLEAdapter`:** Acts as a dedicated configuration profile. It handles Prompt Engineering, orchestrates the XAI extraction (SHAP/LIME/Araucana), and communicates with the `NLEModel` to generate the final text.
+
+---
+
+## 🚀 Installation & Usage
+
+You do not need to clone this repository to use the framework. It can be installed directly via `pip`.
+
+### Option A: Google Colab (Recommended)
+The easiest way to replicate the experiments is using Google Colab's free GPU tier.
+
+1. Open a new [Google Colab](https://colab.research.google.com/) notebook.
+2. Go to `Runtime` > `Change runtime type` and select **T4 GPU**.
+3. Install the package in the first cell:
+   ```bash
+   !pip install nle-framework-pappppx
+   ```
+4. Import the classes and start evaluating your models (see the `experiment.ipynb` notebook in this repository for a full breast cancer classification example).
+
+### Option B: Local Environment
+If running locally, ensure you have an NVIDIA GPU compatible with 4-bit quantization (e.g., RTX 30/40 series, Tesla T4/V100) and CUDA installed.
+
+```bash
+pip install nle-framework-pappppx
+```
+
+---
 
 ## 🔄 Extensibility & Domain Adaptation
 
-This framework is designed with modularity in mind, using an **Adapter Pattern** to switch between different domains (e.g., Oncology, Finance, Law) without modifying the core codebase.
+This framework is highly modular. You can seamlessly switch from Oncology to other domains like Finance, HR, or Law simply by creating a new `NLEAdapter`. 
 
-### How to Adapt to a New Domain:
+### How to Adapt to a New Domain (e.g., Finance):
 
-1.  **Data Layer:**
-    Replace the data loading function in Block 2 with your custom tabular dataset. Retrain the `black_box_model` (e.g., Random Forest) on your new data.
+1. **Train your Model:** Train any scikit-learn compatible black-box model (e.g., Random Forest) on your custom tabular dataset.
+2. **Initialize the Model Manager:** Load the LLM into the GPU once.
+   ```python
+   from nle_core import NLEModel, NLEAdapter
 
-2.  **Initialization:**
-    Instantiate the framework with your specific class labels:
-    ```python
-    nle = NLEFramework(class_names={0: "Loan Denied", 1: "Loan Approved"})
-    ```
+   # Load the LLM into GPU memory
+   nlem = NLEModel(llm_model_name="unsloth/llama-3-8b-Instruct")
+   ```
+3. **Define a New Persona and Create the Adapter:** Write a system prompt tailored to your domain and instantiate a new adapter.
+   ```python
+   # Define a Financial Analyst Persona
+   finance_system_prompt = """
+   SYSTEM ROLE: You are a Senior Financial Risk Analyst.
+   OBJECTIVE: Explain the credit score decision based on user data.
+   CONSTRAINTS: Explain the reasoning clearly without using raw code or nested lists.
+   """
 
-3.  **Adapter Layer (Prompt Engineering):**
-    Do not edit the source code. Instead, register a new **Adapter** using the `register_adapter()` method. Define a new System Role and use the provided `UNIVERSAL_USER_TEMPLATE`.
+   # Define the user template (Universal)
+   UNIVERSAL_USER_TEMPLATE = """
+   PREDICTION: {prediction}
+   XAI CONTEXT: {context_data}
+   INPUTS: {input_features}
+   Explain this:
+   """
 
-    ```python
-    # Example: Defining a Financial Analyst Persona
-    finance_system = """
-    SYSTEM ROLE: You are a Senior Financial Analyst.
-    OBJECTIVE: Explain the credit score decision based on debt-to-income ratio.
-    ...
-    """
-    
-    # Registering the new capability
-    nle.register_adapter("finance_expert", finance_system, UNIVERSAL_USER_TEMPLATE)
-    ```
+   # Create the adapter linked to your class names
+   finance_adapter = NLEAdapter(
+       system_prompt=finance_system_prompt,
+       user_template=UNIVERSAL_USER_TEMPLATE,
+       nle_model=nlem,
+       class_names={0: "Loan Denied", 1: "Loan Approved"}
+   )
+   ```
+4. **Generate the Explanation:**
+   ```python
+   # Generate report combining SHAP, LIME, and Araucana
+   report = finance_adapter.generate_explanation(
+       black_box_model=my_rf_model, 
+       X_train=X_train_finance, 
+       instance=client_data, 
+       explainer_type="shap+lime+araucana",
+       plot=False
+   )
+   print(report)
+   ```
+
+---
 
 ## 🔬 Experimental Reproducibility
 
-The notebook includes a comparative experiment block comparing:
-* **Baseline Approach:** Explanations based solely on SHAP/LIME weights.
-* **Hybrid Approach (Proposed):** Explanations grounded in Araucana's symbolic logic trees.
-
-Run **Block 5** in the notebook to generate the side-by-side comparison reports for specific test instances.
+The `notebooks/` directory contains the complete Jupyter Notebook (`experiment.ipynb`) implementing the clinical pipeline. It includes:
+* **Dataset:** Breast Cancer Wisconsin Diagnostic.
+* **Pipeline:** End-to-end Random Forest training and evaluation.
+* **Batch Execution:** Side-by-side comparative generation of *Baseline* (Weights only) vs *Hybrid* (Logic + Weights) reports across multiple patient profiles.
