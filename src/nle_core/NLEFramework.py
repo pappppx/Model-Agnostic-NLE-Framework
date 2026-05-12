@@ -1,5 +1,6 @@
 import torch
 from unsloth import FastLanguageModel
+import gc
 import shap
 import lime
 import lime.lime_tabular
@@ -10,27 +11,23 @@ from sklearn.tree import plot_tree, export_text
 from sklearn.metrics import accuracy_score
 import araucanaxai
 import warnings
-import gc
 
-class NLEFramework:
+class NLEModel:
     """
-    Main framework class for generating Natural Language Explanations.
-    It integrates a Large Language Model (Llama-3) with multiple XAI backends (SHAP, LIME, Araucana).
-    Implements a Singleton pattern to avoid reloading the LLM into GPU memory.
+    Class responsible for loading and managing the Large Language Model (LLM).
+    Implements a Singleton pattern to avoid duplicating the model in GPU memory.
     """
-
-    # Singleton storage to share model across instances
     _loaded_model = None
     _loaded_tokenizer = None
 
-    def __init__(self, llm_model_name="unsloth/llama-3-8b-Instruct", load_in_4bit=True, class_names={0: "Benigno", 1: "Maligno"}):
-        print("--- Initializing NLEFramework ---")
+    def __init__(self, llm_model_name="unsloth/llama-3-8b-Instruct", load_in_4bit=True):
+        print("--- Initializing NLEModel ---")
 
-        # Memory Management: Check if model is already loaded
-        if NLEFramework._loaded_model is not None:
+        # Memory Management: Check if the model is already loaded
+        if NLEModel._loaded_model is not None:
             print(f">>> Memory Optimization: Reusing loaded model '{llm_model_name}'.")
-            self.model = NLEFramework._loaded_model
-            self.tokenizer = NLEFramework._loaded_tokenizer
+            self.model = NLEModel._loaded_model
+            self.tokenizer = NLEModel._loaded_tokenizer
         else:
             print(f">>> Loading LLM from scratch: {llm_model_name}...")
             # Clear GPU cache before loading
@@ -46,17 +43,24 @@ class NLEFramework:
             FastLanguageModel.for_inference(self.model)
 
             # Cache the model in the class
-            NLEFramework._loaded_model = self.model
-            NLEFramework._loaded_tokenizer = self.tokenizer
+            NLEModel._loaded_model = self.model
+            NLEModel._loaded_tokenizer = self.tokenizer
             print(">>> Model loaded and cached.")
 
-        self.adapters = {}
+class NLEAdapter:
+    """
+    Class representing a specific prompt configuration and handling 
+    XAI context extraction to interact with the NLEModel.
+    """
+    def __init__(self, system_prompt, user_template, nle_model, class_names={0: "Benign", 1: "Malignant"}):
+        # Link to the loaded model
+        self.model = nle_model.model
+        self.tokenizer = nle_model.tokenizer
+        
+        # Save specific configuration for this adapter
+        self.system_prompt = system_prompt
+        self.user_template = user_template
         self.class_names = class_names
-
-    def register_adapter(self, adapter_name, system_prompt, user_template):
-        """Registers a prompt template (Adapter) for a specific persona/task."""
-        self.adapters[adapter_name] = {"system": system_prompt, "user": user_template}
-        print(f"Adapter '{adapter_name}' registered.")
 
     # --- XAI METHODS ---
 
@@ -84,11 +88,11 @@ class NLEFramework:
         feature_importance['abs_value'] = feature_importance['shap_value'].abs()
         feature_importance = feature_importance.sort_values(by='abs_value', ascending=False).head(5)
 
-        context_str = "ANÁLISIS DE IMPORTANCIA DE CARACTERÍSTICAS (SHAP):\n"
+        context_str = "FEATURE IMPORTANCE ANALYSIS (SHAP):\n"
         for _, row in feature_importance.iterrows():
             input_val = instance[row['feature']].values[0]
-            direction = "AUMENTA" if row['shap_value'] > 0 else "DISMINUYE"
-            context_str += f"- La variable '{row['feature']}' (valor={input_val:.2f}) {direction} el riesgo (Impacto: {row['shap_value']:.4f}).\n"
+            direction = "INCREASES" if row['shap_value'] > 0 else "DECREASES"
+            context_str += f"- The variable '{row['feature']}' (value={input_val:.2f}) {direction} the risk (Impact: {row['shap_value']:.4f}).\n"
         return context_str
 
     def _get_lime_context(self, black_box_model, X_train, instance, pred_class, plot=True):
@@ -111,10 +115,10 @@ class NLEFramework:
             plt.show()
 
         lime_list = exp.as_list()
-        context_str = "ANÁLISIS LIME (Reglas Locales Ponderadas):\n"
+        context_str = "LIME ANALYSIS (Local Weighted Rules):\n"
         for feature_rule, weight in lime_list:
-            direction = "AUMENTA" if weight > 0 else "DISMINUYE"
-            context_str += f"- La condición '{feature_rule}' {direction} la probabilidad (Peso: {weight:.4f}).\n"
+            direction = "INCREASES" if weight > 0 else "DECREASES"
+            context_str += f"- The condition '{feature_rule}' {direction} the probability (Weight: {weight:.4f}).\n"
         return context_str
 
     def _get_araucana_context(self, black_box_model, X_train, instance, pred_class, plot=True):
@@ -169,28 +173,25 @@ class NLEFramework:
                 plt.show()
 
             tree_rules = export_text(tree_obj, feature_names=feature_names)
-            context_str = f"ANÁLISIS DE LÓGICA SIMBÓLICA (ARAUCANA):\n"
-            context_str += f"Fidelidad del explicador: {fidelity_val:.2f} (Si es bajo, tomar con precaución).\n"
-            context_str += "Reglas extraídas:\n" + tree_rules
+            context_str = f"SYMBOLIC LOGIC ANALYSIS (ARAUCANA):\n"
+            context_str += f"Explainer fidelity: {fidelity_val:.2f} (If low, take with caution).\n"
+            context_str += "Extracted rules:\n" + tree_rules
 
         except Exception as e:
             print(f"Araucana Error: {e}")
-            context_str = "Error al extraer reglas lógicas."
+            context_str = "Error extracting logic rules."
 
         warnings.resetwarnings()
         return context_str
 
     # --- MAIN GENERATION METHOD ---
 
-    def generate_explanation(self, black_box_model, X_train, instance, y_true=None, explainer_type="shap", adapter_name="default", plot=True):
-        if adapter_name not in self.adapters:
-            raise ValueError(f"Adapter '{adapter_name}' not found.")
-
+    def generate_explanation(self, black_box_model, X_train, instance, y_true=None, explainer_type="shap", plot=True):
         # 1. Model Prediction
         prediction_idx = black_box_model.predict(instance)[0]
         pred_label_str = self.class_names.get(prediction_idx, str(prediction_idx))
 
-        # 2. Internal Audit (Displayed to user, HIDDEN from LLM to prevent bias)
+        # 2. Internal Audit
         if y_true is not None:
             true_val = y_true.values[0] if hasattr(y_true, 'values') else y_true
             true_label_str = self.class_names.get(true_val, str(true_val))
@@ -204,9 +205,8 @@ class NLEFramework:
 
             print(f"\n>>> [INTERNAL AUDIT]: Model Prediction: {pred_label_str} | Ground Truth: {true_label_str}")
             print(f">>> STATUS: {status_type} {detail}")
-            print(">>> (This ground truth info is HIDDEN from the LLM to evaluate pure explanatory fidelity).")
 
-        # 3. Context Generation (Handling multiple explainers)
+        # 3. Context Generation
         explainers_to_run = explainer_type.split("+")
         combined_context = ""
 
@@ -214,26 +214,25 @@ class NLEFramework:
             expl = expl.strip().lower()
             if expl == "shap":
                 txt = self._get_shap_context(black_box_model, X_train, instance, prediction_idx, plot=plot)
-                combined_context += f"\n--- FUENTE 1: PESO DE VARIABLES (SHAP) ---\n{txt}\n"
+                combined_context += f"\n--- SOURCE 1: FEATURE WEIGHTS (SHAP) ---\n{txt}\n"
             elif expl == "lime":
                 txt = self._get_lime_context(black_box_model, X_train, instance, prediction_idx, plot=plot)
-                combined_context += f"\n--- FUENTE: REGLAS PONDERADAS (LIME) ---\n{txt}\n"
+                combined_context += f"\n--- SOURCE: WEIGHTED RULES (LIME) ---\n{txt}\n"
             elif expl == "araucana":
                 txt = self._get_araucana_context(black_box_model, X_train, instance, prediction_idx, plot=plot)
-                combined_context += f"\n--- FUENTE 2: ESTRUCTURA LÓGICA (ARAUCANA) ---\n{txt}\n"
+                combined_context += f"\n--- SOURCE 2: LOGICAL STRUCTURE (ARAUCANA) ---\n{txt}\n"
 
         # 4. Prompt Construction
-        adapter = self.adapters[adapter_name]
-        # NOTE: We do NOT pass 'status_info' to avoid data leakage.
-        user_prompt = adapter["user"].format(
+        user_prompt = self.user_template.format(
             prediction=pred_label_str,
             context_data=combined_context,
             input_features=instance.to_string(index=False)
         )
 
         # 5. LLM Inference
-        messages = [{"role": "system", "content": adapter["system"]}, {"role": "user", "content": user_prompt}]
+        messages = [{"role": "system", "content": self.system_prompt}, {"role": "user", "content": user_prompt}]
         inputs = self.tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=True, return_tensors="pt").to("cuda")
+        
         outputs = self.model.generate(inputs, max_new_tokens=600, use_cache=True)
         response = self.tokenizer.batch_decode(outputs)
 
